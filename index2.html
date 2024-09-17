@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Leitor de Documentos e Perguntas</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #1e1e1e;
+            color: #e0e0e0;
+            margin: 0;
+            padding: 20px;
+        }
+        header {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        h1 {
+            font-size: 2em;
+            color: #f8f9fa;
+        }
+        input, button {
+            padding: 12px;
+            margin: 8px;
+            font-size: 16px;
+            border: 1px solid #444;
+            border-radius: 5px;
+            background-color: #333;
+            color: #e0e0e0;
+        }
+        button {
+            cursor: pointer;
+            background-color: #007bff;
+            border: none;
+            color: #ffffff;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        #resposta {
+            margin-top: 20px;
+            font-weight: bold;
+            color: #ffffff;
+        }
+        #loading {
+            display: none;
+            font-size: 16px;
+            color: #ff6600;
+        }
+        #tempoEstimado {
+            font-size: 16px;
+            margin-top: 10px;
+            color: #e0e0e0;
+        }
+        #perguntasEncontradas {
+            display: none;
+            margin-top: 20px;
+        }
+        #perguntasEncontradas ul {
+            list-style-type: none;
+            padding: 0;
+        }
+        #perguntasEncontradas li {
+            margin-bottom: 15px;
+            padding: 10px;
+            background-color: #333;
+            border-radius: 5px;
+        }
+        .destaque {
+            background-color: #2c3e50;
+            border-left: 5px solid #007bff;
+            padding: 15px;
+            border-radius: 5px;
+        }
+        .card {
+            background-color: #2c3e50;
+            border: 1px solid #444;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            padding: 15px;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>Leitor de Documentos e Perguntas</h1>
+    </header>
+
+    <div class="card">
+        <input type="file" id="documentFile" accept=".pdf,.txt,.docx">
+        <br>
+        <input type="text" id="pergunta" placeholder="Digite sua pergunta">
+        <button id="btnPergunta" onclick="fazerPergunta()">Perguntar</button>
+    </div>
+    
+    <div id="loading">Carregando...</div>
+    <div id="tempoEstimado"></div>
+    <div id="perguntasEncontradas">
+        <h3>Perguntas encontradas com essas palavras inseridas:</h3>
+        <ul id="listaPerguntas"></ul>
+    </div>
+    <div id="resposta"></div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.10.377/pdf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.4.2/mammoth.browser.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.8.0/math.min.js"></script>
+    <script>
+        let perguntasRespostas = [];
+
+        document.getElementById('documentFile').addEventListener('change', function(event) {
+            const file = event.target.files[0];
+            if (file) {
+                const fileType = file.type;
+                const fileReader = new FileReader();
+
+                fileReader.onload = function() {
+                    const content = this.result;
+                    if (fileType === 'application/pdf') {
+                        processarPDF(content);
+                    } else if (fileType === 'text/plain') {
+                        processarTXT(content);
+                    } else if (fileType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+                        processarDOCX(content);
+                    } else {
+                        alert("Tipo de arquivo não suportado.");
+                    }
+                };
+
+                fileReader.readAsArrayBuffer(file);
+            } else {
+                alert("Por favor, selecione um arquivo.");
+            }
+        });
+
+        function processarPDF(arrayBuffer) {
+            pdfjsLib.getDocument(arrayBuffer).promise.then(function(pdf) {
+                let maxPages = pdf.numPages;
+                let countPromises = [];
+
+                for (let i = 1; i <= maxPages; i++) {
+                    let page = pdf.getPage(i);
+                    countPromises.push(page.then(function(pageData) {
+                        return pageData.getTextContent().then(function(textContent) {
+                            let pageText = textContent.items.map(item => item.str).join(' ');
+                            processarTexto(pageText);
+                        });
+                    }));
+                }
+
+                Promise.all(countPromises).then(() => {
+                    console.log("Perguntas e respostas extraídas:", perguntasRespostas);
+                    alert("PDF carregado com sucesso!");
+                });
+            });
+        }
+
+        function processarTXT(content) {
+            let text = new TextDecoder().decode(content);
+            processarTexto(text);
+            alert("Arquivo TXT carregado com sucesso!");
+        }
+
+        function processarDOCX(arrayBuffer) {
+            mammoth.convertToHtml({arrayBuffer: arrayBuffer})
+                .then(function(result) {
+                    let text = result.value;
+                    processarTexto(text);
+                    alert("Arquivo DOCX carregado com sucesso!");
+                })
+                .catch(function(err) {
+                    alert("Erro ao processar o arquivo DOCX.");
+                });
+        }
+
+        function processarTexto(texto) {
+            texto = texto.replace(/\s+/g, ' ').trim();
+            const regex = /(\d*\.\s*[^?]*\?)\s*([\s\S]*?)(?=(?:\d*\.\s*[^?]*\?|$))/g;
+            let match;
+
+            while ((match = regex.exec(texto)) !== null) {
+                let pergunta = match[1].trim();
+                let resposta = match[2].trim();
+                if (resposta.length > 0) {
+                    perguntasRespostas.push({ pergunta, resposta });
+                }
+            }
+
+            console.log("Perguntas e respostas processadas:", perguntasRespostas);
+        }
+
+        function calcularSimilaridade(pergunta1, pergunta2) {
+            const palavras1 = pergunta1.toLowerCase().split(/\s+/);
+            const palavras2 = pergunta2.toLowerCase().split(/\s+/);
+
+            let similaridade = 0;
+            palavras1.forEach(palavra1 => {
+                if (palavras2.includes(palavra1)) {
+                    similaridade++;
+                }
+            });
+
+            return similaridade / Math.max(palavras1.length, palavras2.length);
+        }
+
+        function buscarResposta(pergunta) {
+            pergunta = pergunta.trim();
+            let perguntasEncontradas = [];
+
+            for (const { pergunta: p, resposta } of perguntasRespostas) {
+                const similaridade = calcularSimilaridade(pergunta, p);
+                if (similaridade > 0.5) { // Ajuste o limiar conforme necessário
+                    perguntasEncontradas.push({ pergunta: p, resposta, similaridade });
+                }
+            }
+
+            perguntasEncontradas.sort((a, b) => b.similaridade - a.similaridade);
+
+            return perguntasEncontradas.slice(0, 5); // Retorna apenas as 5 mais parecidas
+        }
+
+        function estimarTempo(tamanhoTexto) {
+            const velocidadeProcessamento = 1000; // ajustável conforme necessário
+            return Math.ceil(tamanhoTexto / velocidadeProcessamento);
+        }
+
+        function formatarTempo(tempo) {
+            const minutos = Math.floor(tempo / 60);
+            const segundos = tempo % 60;
+            return minutos > 0 ? `${minutos} minuto(s) e ${segundos} segundo(s)` : `${segundos} segundo(s)`;
+        }
+
+        function processarPerguntaMatematica(pergunta) {
+            try {
+                let resultado = math.evaluate(pergunta);
+                return `O resultado é ${resultado}`;
+            } catch (e) {
+                return "Não consegui entender a pergunta matemática.";
+            }
+        }
+
+        function fazerPergunta() {
+            const pergunta = document.getElementById('pergunta').value;
+            const botaoPergunta = document.getElementById('btnPergunta');
+            const loading = document.getElementById('loading');
+            const tempoEstimadoDiv = document.getElementById('tempoEstimado');
+            const perguntasEncontradasDiv = document.getElementById('perguntasEncontradas');
+            const listaPerguntas = document.getElementById('listaPerguntas');
+
+            loading.style.display = 'block';
+            botaoPergunta.disabled = true;
+
+            const tempoRestante = estimarTempo(perguntasRespostas.length);
+            tempoEstimadoDiv.innerText = `Tempo estimado para resposta: ${formatarTempo(tempoRestante)}`;
+            tempoEstimadoDiv.style.display = 'block';
+
+            let resposta;
+
+            if (/\d+\s*[\+\-\*\/\^\(\)]\s*\d+/.test(pergunta)) {
+                resposta = processarPerguntaMatematica(pergunta);
+                loading.style.display = 'none';
+                botaoPergunta.disabled = false;
+                tempoEstimadoDiv.style.display = 'none';
+                document.getElementById('resposta').innerText = resposta;
+                return;
+            }
+
+            setTimeout(() => {
+                const perguntasEncontradas = buscarResposta(pergunta);
+
+                loading.style.display = 'none';
+                botaoPergunta.disabled = false;
+                tempoEstimadoDiv.style.display = 'none';
+
+                if (perguntasEncontradas.length > 0) {
+                    perguntasEncontradasDiv.style.display = 'block';
+                    listaPerguntas.innerHTML = '';
+
+                    perguntasEncontradas.forEach(({ pergunta: p, resposta }) => {
+                        const item = document.createElement('li');
+                        item.innerHTML = `<strong>Pergunta:</strong> ${p}<br><strong>Resposta:</strong> ${resposta}`;
+                        listaPerguntas.appendChild(item);
+                    });
+                } else {
+                    perguntasEncontradasDiv.style.display = 'none';
+                    listaPerguntas.innerHTML = '<li>Não encontrei uma resposta exata no texto.</li>';
+                }
+            }, Math.min(tempoRestante, 60) * 1000);
+        }
+
+        document.getElementById('pergunta').addEventListener('keypress', function(event) {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                fazerPergunta();
+            }
+        });
+    </script>
+
+</body>
+</html>
